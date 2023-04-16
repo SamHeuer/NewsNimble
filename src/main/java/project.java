@@ -29,18 +29,22 @@ import java.awt.Graphics;
 import java.awt.GradientPaint;
 import java.io.IOException;
 
-// upload image
+// for uploading image
 import com.cloudinary.*;
 import com.cloudinary.utils.ObjectUtils;
 import java.util.HashMap;
 
-// openAI
+// for text-davinci-003
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+
+// for scheduling
+import java.util.Timer;
+import java.util.TimerTask;
 
 class instagramAPIClient {
     private String instagramPageId;
@@ -136,13 +140,11 @@ class instagramAPIClient {
 class newsAPIClient {
     private static final String APIKEY = "ADD YOUR KEY HERE";
 
-    String catchyHeadline = "Generate a catchy headline for this article: ";
-    String produceCaption = "Summarise the article : ";
-
     private String caption=null;
 
     private String hostedUrl=null;
 
+    private String publicImageName=null;
     Gson gson = new Gson();
 
     String textParserOpenAI(String jsonResponse){
@@ -160,6 +162,15 @@ class newsAPIClient {
         catch (Exception e){
             System.out.println("Error: " + e.getMessage());
         }
+    }
+
+    String removePath(String url) {
+        int lastSlashIndex = url.lastIndexOf('/');
+        int lastDotIndex = url.lastIndexOf('.');
+        if (lastSlashIndex == -1 || lastDotIndex == -1) {
+            return url;
+        }
+        return url.substring(lastSlashIndex + 1, lastDotIndex);
     }
 
     public void newsAPIFetch(){
@@ -184,7 +195,7 @@ class newsAPIClient {
 
             if(statusAPICall.compareTo("ok")==0){
                 JsonArray articleJson = jsonObject.getAsJsonArray("articles");
-                JsonObject highestPriorityArticleJSON = articleJson.get(0).getAsJsonObject();
+                JsonObject highestPriorityArticleJSON = articleJson.get(2).getAsJsonObject();
                 String sourceName="",authorName="",highestPriorityArticleDescription="",highestPriorityArticleUrlToImage="",highestPriorityArticleTitle="",highestPriorityArticleUrl="";
                 if(highestPriorityArticleJSON.get("description").isJsonNull()){
                     throw new RuntimeException("Invalid description in response of newsapi.org");
@@ -197,6 +208,7 @@ class newsAPIClient {
                 }
                 else{
                     highestPriorityArticleUrlToImage = highestPriorityArticleJSON.get("urlToImage").getAsString();
+                    publicImageName = removePath(highestPriorityArticleUrlToImage) ;
                 }
                 if(highestPriorityArticleJSON.get("title").isJsonNull()){
                     throw new RuntimeException("Invalid title in response of newsapi.org");
@@ -227,40 +239,41 @@ class newsAPIClient {
                 System.out.println("Source : " + sourceName+"\n");
                 System.out.println("Author : " + authorName+"\n\n");
 
-                OpenAIRequest headlineOpenAIClient =new OpenAIRequest(catchyHeadline+highestPriorityArticleTitle);
-                OpenAIRequest captionOpenAIClient =new OpenAIRequest(produceCaption+highestPriorityArticleDescription);
+                String headlinePayload = highestPriorityArticleTitle;
+                String captionPayload = highestPriorityArticleDescription;
+                System.out.println("Headline Payload : " + headlinePayload+"\n\n"+"Caption Payload : " + captionPayload+"\n");
+                OpenAIRequest headlineOpenAIClient =new OpenAIRequest(headlinePayload);
+                OpenAIRequest captionOpenAIClient =new OpenAIRequest(captionPayload);
+                System.out.println("Requesting Open AI for headline\n");
                 String headlineResponseOpenAI = headlineOpenAIClient.sendOpenAIRequest(20);
-                String captionResponseOpenAI = captionOpenAIClient.sendOpenAIRequest(120);
-                System.out.println(headlineResponseOpenAI);
-                System.out.println(captionResponseOpenAI);
-                if(headlineOpenAIClient==null || captionResponseOpenAI==null){
-                    throw new RuntimeException("OpenAI.org returned the following invalid response:\n ");
-                }
-                System.out.println(highestPriorityArticleJSON);
-
-                System.out.println(headlineResponseOpenAI);
-                System.out.println(captionResponseOpenAI);
+                Thread.sleep(10*1000);
+                System.out.println("Requesting Open AI for caption\n");
+                String captionResponseOpenAI = captionOpenAIClient.sendOpenAIRequest(200);
 
                 if(headlineOpenAIClient==null || captionResponseOpenAI==null){
                     throw new RuntimeException("OpenAI.org returned an invalid response:\n ");
                 }
 
+                System.out.println(headlineResponseOpenAI+"\n");
+                System.out.println(captionResponseOpenAI);
+
+
                 String finalHeadline = textParserOpenAI(headlineResponseOpenAI);
-                System.out.println(finalHeadline);
                 String tempCaption= textParserOpenAI(captionResponseOpenAI);
-                System.out.println(tempCaption);
 
                 imageTools imageObj = new imageTools();
                 imageObj.downloadImage(highestPriorityArticleUrlToImage);
                 imageObj.editImage(finalHeadline);
                 System.out.println("Done with editing \n");
 
-                hostedUrl = imageObj.uploadImage();
-
+                hostedUrl = imageObj.uploadImage(publicImageName);
+                Thread.sleep(15*1000);
                 String finalCaption = tempCaption +"\n\n"+ "Source : " +sourceName+"\n\n"+"Author : "+authorName + "\n\n"+ "Article Source : "+ highestPriorityArticleUrl + "\n\n" + "Image Source : "+ highestPriorityArticleUrlToImage ;
 
                 textEncoder(finalCaption);
-                System.out.println("Finalized caption :" + finalCaption +"\n\n");
+                System.out.println("Finalized caption :\n" + finalCaption +"\n\n");
+                System.out.println("Headline : " + finalHeadline+"\n\n");
+                System.out.println("Public Image Name : " +publicImageName+"\n");
 
             }
             else{
@@ -293,6 +306,15 @@ class newsAPIClient {
             throw new RuntimeException("Invalid Post URL\n ");
         }
     }
+
+    String getPublicImageName(){
+        if(this.publicImageName!=null){
+            return publicImageName;
+        }
+        else{
+            throw new RuntimeException("Invalid Public Image Name URL\n ");
+        }
+    }
 }
 
 class imageTools {
@@ -300,7 +322,7 @@ class imageTools {
     final String editedPath=".\\articleImages\\editedImage\\image.jpg";
     final String logoPath=".\\articleImages\\logoBanner\\banner.png";
 
-    static String uploadedImageName="aaaa3";
+    static String uploadedImageName=null;
 
     void downloadImage(String urlString) {
         try {
@@ -311,10 +333,12 @@ class imageTools {
         }
     }
 
-    String uploadImage(){
+    String uploadImage(String imageName){
+        uploadedImageName=imageName;
+
         // Configure
         Map config = new HashMap();
-        config.put("cloud_name", "deaamj6ud");
+        config.put("cloud_name", "ADD YOUR CLOUD NAME HERE");
         config.put("api_key", "ADD YOUR KEY HERE");
         config.put("api_secret", "ADD YOUR SECRET KEY HERE");
         Cloudinary cloudinary = new Cloudinary(config);
@@ -327,20 +351,20 @@ class imageTools {
         }
 
         // Transform
-        String url = cloudinary.url().generate(uploadedImageName).toString();
+        String url = cloudinary.url().generate(this.uploadedImageName).toString();
         System.out.println(url);
         return url;
     }
 
-    static void deleteImage(){
+    static void deleteImage(String imageName){
         Map config = new HashMap();
-        config.put("cloud_name", "deaamj6ud");
-        config.put("api_key", "958762116572724");
-        config.put("api_secret", "LnLTRfKlsRW1oG-hAH76187PQKE");
+        config.put("cloud_name", "ADD YOUR CLOUD NAME HERE");
+        config.put("api_key", "ADD YOUR KEY HERE");
+        config.put("api_secret", "ADD YOUR SECRET KEY HERE");
         Cloudinary cloudinary = new Cloudinary(config);
 
         try {
-            cloudinary.uploader().destroy(uploadedImageName, ObjectUtils.emptyMap());
+            cloudinary.uploader().destroy(imageName, ObjectUtils.emptyMap());
             System.out.println("Image deleted successfully.");
         } catch (Exception e) {
             System.out.println("Error deleting image: " + e.getMessage());
@@ -397,8 +421,7 @@ class imageTools {
                 i++;
             }
             if (line.isEmpty()) {
-                // If a word is too long to fit in a single line, just add it
-                // to the output string without any wrapping
+                // If a word is too long to fit in a single line, just add it to the output string without any wrapping
                 op += words[i] + " ";
                 i++;
             } else {
@@ -419,18 +442,17 @@ class imageTools {
     BufferedImage addLogoToImage(BufferedImage image) throws IOException {
         // Load logo image
         BufferedImage logo = ImageIO.read(new File(logoPath));
-        // Create combined image
+
         BufferedImage combinedImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = combinedImage.createGraphics();
 
-        // Draw original image onto combined image
         g.drawImage(image, 0, 0, null);
 
         // Ensure that logo fits within original image dimensions, and draw it onto combined image
         int logoWidth = logo.getWidth();
         int logoHeight = logo.getHeight();
         if (logoWidth > image.getWidth() || logoHeight > image.getHeight()) {
-            double scale = Math.min((double) image.getWidth() / logoWidth, (double) image.getHeight() / logoHeight);
+            double scale = Math.min( ((double)image.getWidth()) / ((double)logoWidth),  ((double)image.getHeight()) / ((double)logoHeight));
             logoWidth = (int) (logoWidth * scale);
             logoHeight = (int) (logoHeight * scale);
             logo = resizeImage(logo, logoWidth, logoHeight);
@@ -469,11 +491,11 @@ class imageTools {
             int textWidth = fm.stringWidth(text);
 
             String wrappedText = textWrapper(text,font,image.getWidth()-10);
-            //System.out.println(wrappedText);
+
             // Draw the wrapped text onto the image
             String[] lines = wrappedText.split("\n");
             int x = 10; // Left margin
-            int y = (((int)(height*1.5) - fm.getHeight() * lines.length) / 2) + fm.getAscent(); // Center vertically
+            int y = (((int)(height*1.5) - fm.getHeight() * lines.length) / 2) + fm.getAscent();
             for (String line : lines) {
                 g2.drawString(line, x, y);
                 y += fm.getHeight();
@@ -482,9 +504,9 @@ class imageTools {
             // Save the modified image
             ImageIO.write(image, "png", new File(editedPath));
 
-            // Clean up resources
             g2.dispose();
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             e.printStackTrace();
         }
     }
@@ -500,7 +522,7 @@ class OpenAIRequest {
     }
     String sendOpenAIRequest(int maxTokens){
         try {
-            String payload = "{\"prompt\": \"" + prompt + "\", \"max_tokens\": " + maxTokens + ", \"temperature\": 0.7}";
+            String payload = "{\"prompt\": \"" + prompt + "\", \"max_tokens\": " + maxTokens + ", \"temperature\": 0.5, \"top_p\": 0.5, \"frequency_penalty\": 1.0, \"presence_penalty\": 1.2}";
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(urlString))
                     .header("Content-Type", "application/json")
@@ -519,23 +541,32 @@ class OpenAIRequest {
 
 class project{
     public static void main(String args[]){
-        try {
-            newsAPIClient newsObj = new newsAPIClient();
-            newsObj.newsAPIFetch();
-            String encodedCaption = newsObj.getCaption();
-            String hostedPostUrl = newsObj.getHostedPostUrl();
-            instagramAPIClient instagramObj = new instagramAPIClient();
-            instagramObj.initInstagramBusinessAccountId();
-            instagramObj.setPostURL(hostedPostUrl);
-            instagramObj.setCaption(encodedCaption);
-            instagramObj.initMediaContainer();
-            instagramObj.postMediaContainer();
-            Thread.sleep(40 * 1000);
-            System.out.println("Deleting cloudinary hosted file");
-            imageTools.deleteImage();
-        }
-        catch (Exception e){
-            e.printStackTrace();
-        }
+        Timer timer = new Timer();
+        TimerTask task = new TimerTask() {
+            public void run() {
+                try {
+                    newsAPIClient newsObj = new newsAPIClient();
+                    newsObj.newsAPIFetch();
+                    String encodedCaption = newsObj.getCaption();
+                    String hostedImageName = newsObj.getPublicImageName();
+                    String hostedPostUrl = newsObj.getHostedPostUrl();
+                    instagramAPIClient instagramObj = new instagramAPIClient();
+                    instagramObj.initInstagramBusinessAccountId();
+                    instagramObj.setPostURL(hostedPostUrl);
+                    instagramObj.setCaption(encodedCaption);
+                    instagramObj.initMediaContainer();
+                    instagramObj.postMediaContainer();
+
+                    System.out.println("Deleting cloudinary hosted file in 40 seconds");
+                    Thread.sleep(40 * 1000);
+                    imageTools.deleteImage(hostedImageName);
+                    System.out.println("Program will run again in 2 hours");
+                }
+                catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        };
+        timer.schedule(task, 0, 2 * 60 * 60 * 1000);
     }
 }
