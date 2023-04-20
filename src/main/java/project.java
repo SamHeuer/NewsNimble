@@ -41,6 +41,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
+import java.util.List;
 
 // for scheduling
 import java.util.Timer;
@@ -63,14 +64,14 @@ class instagramAPIClient {
             HttpURLConnection con = (HttpURLConnection) url.openConnection();
             con.setRequestMethod("GET");
 
-            BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+            BufferedReader reader = new BufferedReader(new InputStreamReader(con.getInputStream()));
             StringBuffer response = new StringBuffer();
 
-            while ((inputLine = in.readLine()) != null) {
+            while ((inputLine = reader.readLine()) != null) {
                 response.append(inputLine);
             }
 
-            in.close();
+            reader.close();
 
             System.out.println(response.toString());
             JsonObject jsonObject = gson.fromJson(response.toString(), JsonObject.class);
@@ -103,10 +104,10 @@ class instagramAPIClient {
             os.write(requestBodyBytes, 0, requestBodyBytes.length);
 
             InputStreamReader inpStreamReader = new InputStreamReader(con.getInputStream(), "utf-8");
-            BufferedReader br = new BufferedReader(inpStreamReader);
+            BufferedReader reader = new BufferedReader(inpStreamReader);
             StringBuilder response = new StringBuilder();
             String responseLine = null;
-            while ((responseLine = br.readLine()) != null) {
+            while ((responseLine = reader.readLine()) != null) {
                 response.append(responseLine.trim());
             }
 
@@ -140,6 +141,9 @@ class instagramAPIClient {
 class newsAPIClient {
     private static final String APIKEY = "ADD YOUR KEY HERE";
 
+    private final String catchyHeadline = "Generate a catchy headline for this article: ";
+    private final String produceCaption = "Write 80 words caption on the following: ";
+
     private String caption=null;
 
     private String hostedUrl=null;
@@ -147,11 +151,15 @@ class newsAPIClient {
     private String publicImageName=null;
     Gson gson = new Gson();
 
-    String textParserOpenAI(String jsonResponse){
+    String textParserOpenAI(String response){
         Gson gson = new Gson();
-        JsonObject response = gson.fromJson(jsonResponse, JsonObject.class);
-        String text = response.getAsJsonArray("choices").get(0).getAsJsonObject().get("text").getAsString();
-        return text.trim();
+        JsonObject obj = gson.fromJson(response, JsonObject.class);
+
+        JsonArray choices = obj.getAsJsonArray("choices");
+        JsonObject message = choices.get(0).getAsJsonObject().getAsJsonObject("message");
+        String content = message.get("content").getAsString();
+
+        return content;
     }
 
 
@@ -180,14 +188,14 @@ class newsAPIClient {
             HttpURLConnection con = (HttpURLConnection) url.openConnection();
             con.setRequestMethod("GET");
 
-            BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+            BufferedReader reader = new BufferedReader(new InputStreamReader(con.getInputStream()));
             StringBuffer response = new StringBuffer();
 
-            while ((inputLine = in.readLine()) != null) {
+            while ((inputLine = reader.readLine()) != null) {
                 response.append(inputLine);
             }
 
-            in.close();
+            reader.close();
 
             JsonObject jsonObject = gson.fromJson(response.toString(), JsonObject.class);
             System.out.println("JSONOBJECT : "+jsonObject.toString());
@@ -195,7 +203,7 @@ class newsAPIClient {
 
             if(statusAPICall.compareTo("ok")==0){
                 JsonArray articleJson = jsonObject.getAsJsonArray("articles");
-                JsonObject highestPriorityArticleJSON = articleJson.get(2).getAsJsonObject();
+                JsonObject highestPriorityArticleJSON = articleJson.get(0).getAsJsonObject();
                 String sourceName="",authorName="",highestPriorityArticleDescription="",highestPriorityArticleUrlToImage="",highestPriorityArticleTitle="",highestPriorityArticleUrl="";
                 if(highestPriorityArticleJSON.get("description").isJsonNull()){
                     throw new RuntimeException("Invalid description in response of newsapi.org");
@@ -242,13 +250,13 @@ class newsAPIClient {
                 String headlinePayload = highestPriorityArticleTitle;
                 String captionPayload = highestPriorityArticleDescription;
                 System.out.println("Headline Payload : " + headlinePayload+"\n\n"+"Caption Payload : " + captionPayload+"\n");
-                OpenAIRequest headlineOpenAIClient =new OpenAIRequest(headlinePayload);
-                OpenAIRequest captionOpenAIClient =new OpenAIRequest(captionPayload);
+                OpenAIRequest headlineOpenAIClient =new OpenAIRequest(catchyHeadline,headlinePayload);
+                OpenAIRequest captionOpenAIClient =new OpenAIRequest(produceCaption,captionPayload);
                 System.out.println("Requesting Open AI for headline\n");
-                String headlineResponseOpenAI = headlineOpenAIClient.sendOpenAIRequest(20);
+                String headlineResponseOpenAI = headlineOpenAIClient.sendOpenAIRequest();
                 Thread.sleep(10*1000);
                 System.out.println("Requesting Open AI for caption\n");
-                String captionResponseOpenAI = captionOpenAIClient.sendOpenAIRequest(200);
+                String captionResponseOpenAI = captionOpenAIClient.sendOpenAIRequest();
 
                 if(headlineOpenAIClient==null || captionResponseOpenAI==null){
                     throw new RuntimeException("OpenAI.org returned an invalid response:\n ");
