@@ -411,7 +411,7 @@ class imageTools {
             String line = "";
             int lineWidth = 0;
             while (i < words.length) {
-                String word = words[i].replaceAll("[^\\w]", "");
+                String word = words[i];
                 int wordWidth = fm.stringWidth(word);
                 if (lineWidth + wordWidth > availableWidth) {
                     break;
@@ -449,16 +449,16 @@ class imageTools {
         g.drawImage(image, 0, 0, null);
 
         // Ensure that logo fits within original image dimensions, and draw it onto combined image
-        int logoWidth = logo.getWidth();
-        int logoHeight = logo.getHeight();
-        if (logoWidth > image.getWidth() || logoHeight > image.getHeight()) {
-            double scale = Math.min( ((double)image.getWidth()) / ((double)logoWidth),  ((double)image.getHeight()) / ((double)logoHeight));
-            logoWidth = (int) (logoWidth * scale);
-            logoHeight = (int) (logoHeight * scale);
-            logo = resizeImage(logo, logoWidth, logoHeight);
-        }
         g.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1.0f));
-        g.drawImage(logo, 5, 5, logoWidth*2/5, logoHeight*2/5, null);
+        int logoX = (int) (image.getWidth() * 0.02);
+        int logoY = (int) (image.getHeight() * 0.02);
+        double aspectRatio = (double) logo.getWidth() / logo.getHeight();
+        int logoMaxWidth = (int) (image.getWidth() * 0.25);
+        int logoMaxHeight = (int) (image.getHeight() * 0.25);
+        int logoWidth = Math.min(logoMaxWidth, (int) (logoMaxHeight * aspectRatio));
+        int logoHeight = Math.min(logoMaxHeight, (int) (logoMaxWidth / aspectRatio));
+        g.drawImage(logo, logoX, logoY, logoWidth, logoHeight, null);
+
 
         g.dispose();
         return combinedImage;
@@ -466,7 +466,6 @@ class imageTools {
 
     void editImage(String text) {
         try {
-            // Load the image file
             File imageFile = new File(downloadPath);
             BufferedImage image = ImageIO.read(imageFile);
 
@@ -474,14 +473,11 @@ class imageTools {
             image = blackGradient(image);
             image = addLogoToImage(image);
 
-            // Get the image dimensions
             int width = image.getWidth();
             int height = image.getHeight();
 
-            // Create a graphics object to draw on the image
             Graphics2D g2 = image.createGraphics();
 
-            // Set the font and color of the text
             int fontSize = (int) (Math.min(width, height) * 0.05);
             Font font = new Font("Roboto", Font.BOLD, fontSize);
             g2.setFont(font);
@@ -492,16 +488,14 @@ class imageTools {
 
             String wrappedText = textWrapper(text,font,image.getWidth()-10);
 
-            // Draw the wrapped text onto the image
             String[] lines = wrappedText.split("\n");
-            int x = 10; // Left margin
+            int x = 10;
             int y = (((int)(height*1.5) - fm.getHeight() * lines.length) / 2) + fm.getAscent();
             for (String line : lines) {
                 g2.drawString(line, x, y);
                 y += fm.getHeight();
             }
 
-            // Save the modified image
             ImageIO.write(image, "png", new File(editedPath));
 
             g2.dispose();
