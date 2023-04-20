@@ -507,16 +507,30 @@ class imageTools {
 }
 class OpenAIRequest {
     private static final String APIKEY = "ADD YOUR KEY HERE";
-    private static final String urlString = "https://api.openai.com/v1/engines/davinci/completions";
+    private static final String urlString = "https://api.openai.com/v1/chat/completions";
+    private final double temperature = 0.5;
+    private final String model = "gpt-3.5-turbo";
     private final HttpClient httpClient;
     String prompt="";
-    OpenAIRequest(String prompt) {
+    String content="";
+    OpenAIRequest(String prompt,String content) {
         this.prompt=prompt;
+        this.content=content;
         this.httpClient = HttpClient.newHttpClient();
     }
-    String sendOpenAIRequest(int maxTokens){
+    String sendOpenAIRequest(){
         try {
-            String payload = "{\"prompt\": \"" + prompt + "\", \"max_tokens\": " + maxTokens + ", \"temperature\": 0.5, \"top_p\": 0.5, \"frequency_penalty\": 1.0, \"presence_penalty\": 1.2}";
+            String payload = "{\n" +
+                    "  \"model\": \"gpt-3.5-turbo\",\n" +
+                    "  \"messages\": [\n" +
+                    "    {\"role\": \"system\", \"content\": \"Assistant is a news blogger for a news website\"},\n" +
+                    "    {\"role\": \"user\", \"content\": \""+(this.prompt+this.content)+"\"},\n" +
+                    "    {\"role\": \"assistant\", \"content\": \"\"},\n" +
+                    "    {\"role\": \"user\", \"content\": \"\"}\n" +
+                    "  ],\n" +
+                    "  \"temperature\": 0.3,\n" +
+                    "  \"max_tokens\": 2000\n" +
+                    "}";
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(urlString))
                     .header("Content-Type", "application/json")
@@ -526,7 +540,7 @@ class OpenAIRequest {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             return response.body();
         }
-        catch(Exception e){
+        catch (Exception e) {
             e.printStackTrace();
         }
         return null;
